@@ -28,12 +28,14 @@ class ConvolutionalLayer(object):
         start_time = time.time()
         self.input = input # [N, C, H, W]
         # TODO: 边界扩充
-        height = _______________________
-        width = _______________________
+        height = self.input.shape[2] + 2 * self.padding # one in front while one in end
+        width = self.input.shape[3] + 2 * self.padding # Same as above
+
         self.input_pad = np.zeros([self.input.shape[0], self.input.shape[1], height, width])
-        self.input_pad[_______________________] = self.input
-        height_out = _______________________
-        width_out = _______________________ 
+        self.input_pad[:, :, self.padding: height - self.padding, self.padding: width - self.padding] = self.input
+        
+        height_out = (height - self.kernel_size + self.stride) // self.stride # euqal to ceil()
+        width_out = (width - self.kernel_size + self.stride) // self.stride
         self.output = np.zeros([self.input.shape[0], self.channel_out, height_out, width_out])
         for idxn in range(self.input.shape[0]):
             for idxc in range(self.channel_out):
