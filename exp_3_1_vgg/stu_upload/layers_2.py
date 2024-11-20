@@ -42,7 +42,12 @@ class ConvolutionalLayer(object):
                 for idxh in range(height_out):
                     for idxw in range(width_out):
                         # TODO: 计算卷积层的前向传播，特征图与卷积核的内积再加偏置
-                        self.output[idxn, idxc, idxh, idxw] = _______________________
+                        h_now = idxh * self.stride
+                        w_now = idxw * self.stride
+                        self.output[idxn, idxc, idxh, idxw] = np.sum( \
+                                self.weight[:, :, :, idxc] * \
+                                self.input_pad[idxn, :, h_now: h_now + self.kernel_size, w_now: w_now + self.kernel_size]\
+                            ) + self.bias[idxc]
         return self.output
     def load_param(self, weight, bias):  # 参数加载
         assert self.weight.shape == weight.shape
@@ -59,15 +64,19 @@ class MaxPoolingLayer(object):
         start_time = time.time()
         self.input = input # [N, C, H, W]
         self.max_index = np.zeros(self.input.shape)
-        height_out = _______________________
-        width_out = _______________________
+        height_out = (self.input.shape[2] - self.kernel_size + self.stride) // self.stride
+        width_out = (self.input.shape[3] - self.kernel_size + self.stride) // self.stride
         self.output = np.zeros([self.input.shape[0], self.input.shape[1], height_out, width_out])
         for idxn in range(self.input.shape[0]):
             for idxc in range(self.input.shape[1]):
                 for idxh in range(height_out):
                     for idxw in range(width_out):
 			            # TODO： 计算最大池化层的前向传播， 取池化窗口内的最大值
-                        self.output[idxn, idxc, idxh, idxw] = _______________________
+                        h_now = idxh * self.stride
+                        w_now = idxw * self.stride
+                        self.output[idxn, idxc, idxh, idxw] = self.input[\
+                                idxn, idxc, h_now: h_now + self.kernel_size, w_now: w_now + self.kernel_size
+                                ].max()
         return self.output
 
 class FlattenLayer(object):
@@ -81,7 +90,7 @@ class FlattenLayer(object):
         # matconvnet feature map dim: [N, height, width, channel]
         # ours feature map dim: [N, channel, height, width]
         # TODO：转换 input 维度顺序
-        self.input = _______________________
+        self.input = self.input.reshape([self.input.shape[0]] + list(self.output_shape))
         self.output = self.input.reshape([self.input.shape[0]] + list(self.output_shape))
         show_matrix(self.output, 'flatten out ')
         return self.output
