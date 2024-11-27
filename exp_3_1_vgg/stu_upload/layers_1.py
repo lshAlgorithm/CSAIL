@@ -43,7 +43,7 @@ class ReLULayer(object):
         start_time = time.time()
         self.input = input
         # TODO：ReLU层的前向传播，计算输出结果
-        output = np.maximun(0, input)
+        output = np.maximum(0, input)
         return output
     def backward(self, top_diff):  # 反向传播的计算
         # TODO：ReLU层的反向传播，计算本层损失

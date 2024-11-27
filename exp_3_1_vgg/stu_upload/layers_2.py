@@ -90,7 +90,7 @@ class FlattenLayer(object):
         # matconvnet feature map dim: [N, height, width, channel]
         # ours feature map dim: [N, channel, height, width]
         # TODO：转换 input 维度顺序
-        self.input = self.input.reshape([self.input.shape[0]] + list(self.output_shape))
+        self.input = np.transpose(input, [0, 2, 3, 1])
         self.output = self.input.reshape([self.input.shape[0]] + list(self.output_shape))
         show_matrix(self.output, 'flatten out ')
         return self.output
