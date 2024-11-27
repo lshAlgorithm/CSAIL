@@ -41,7 +41,7 @@ class VGG19(object):
         # relu1_2
         self.net.createReLuLayer('relu1_2')
 
-        _______________________
+        self.net.createPoolingLayer('pool1', 1, 64, 224, 224, self.input_quant_params[])
         
         # flatten
         self.net.createFlattenLayer('flatten', [1, 512 * 7 * 7, 1, 1])
