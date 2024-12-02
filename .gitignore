@@ -1,3 +1,4 @@
 *.mat
 *.pyc
 /mnist_data
+*.zip
