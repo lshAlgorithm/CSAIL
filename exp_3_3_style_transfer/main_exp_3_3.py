@@ -109,6 +109,7 @@ if __name__ == '__main__':
         total_loss = ALPHA * np.mean(content_loss) + BETA * np.mean(style_loss)
         image_diff = ALPHA * content_diff / len(CONTENT_LOSS_LAYERS) + BETA * style_diff / len(STYLE_LOSS_LAYERS)
         # TODO： 利用Adam优化器对风格迁移图像进行更新
+        # We frozen the parameters in kernels, only update the pixel in transfer_image graph
         transfer_image = adam_optimizer.update(transfer_image, image_diff)
         if step % 1 == 0:
             print('Step %d, loss = %f' % (step, total_loss), content_loss, style_loss)
