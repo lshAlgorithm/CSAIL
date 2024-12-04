@@ -88,7 +88,7 @@ class ConvolutionalLayer(object):
                 for idxw in range(width_out):
                     h_now = idxh * self.stride
                     w_now = idxw * self.stride
-                    self.img2col[idxn * height_out * self.width_out + idxh * width_out + idxw, :] = \
+                    self.img2col[idxn * height_out * width_out + idxh * width_out + idxw, :] = \
                         self.input_pad[idxn, :, h_now : h_now + self.kernel_size, w_now : w_now + self.kernel_size] \
                         .reshape([-1]) # reshape to automatically fit in the matrix, syntactic sugar!
 
@@ -169,21 +169,32 @@ class MaxPoolingLayer(object):
                     for idxw in range(width_out):
                         # TODO： 计算最大池化层的前向传播， 取池化窗口内的最大值
                         self.output[idxn, idxc, idxh, idxw] = np.max(self.input[idxn, idxc, idxh * self.stride : idxh * self.stride + self.kernel_size, idxw * self.stride : idxw * self.stride + self.kernel_size])
-                        curren_max_index = np.argmax(self.input[idxn, idxc, idxh*self.stride:idxh*self.stride+self.kernel_size, idxw*self.stride:idxw*self.stride+self.kernel_size])
-                        curren_max_index = np.unravel_index(curren_max_index, [self.kernel_size, self.kernel_size])
+                        curren_max_index = np.argmax(self.input[idxn, idxc, idxh*self.stride:idxh*self.stride+self.kernel_size, idxw*self.stride:idxw*self.stride+self.kernel_size])\
+                                            .unravel_index([self.kernel_size, self.kernel_size])
                         self.max_index[idxn, idxc, idxh*self.stride+curren_max_index[0], idxw*self.stride+curren_max_index[1]] = 1
         return self.output
     def forward_speedup(self, input):
         # TODO: 改进forward函数，使得计算加速
         start_time = time.time()
         
-        _______________________
+        self.input = input
+        self.height_out = (self.input.shape[2] - self.kernel_size) // self.stride + 1
+        self.width_out = (self.input.shape[3] - self.kernel_size) // self.stride + 1
+
+        self.input_col = img2col(self.input, self.height_out, self.width_out, self.kernel_size, self.stride) \
+                        .reshape(self.input.shape[0], self.input.shape[1], -1, self.height_out, self.width_out)
+        input_col_max = self.input_col.max(axis = 2, keepdims=True)
+        self.max_index = (self.input_col == input_col_max)
+        self.output = input_col_max.reshape(self.input.shape[0], self.input.shape[1], self.height_out, self.width_out)
+
 
         return self.output
     def backward_speedup(self, top_diff):
         # TODO: 改进backward函数，使得计算加速
 
-        _______________________
+        pool_diff = (self.max_index * top_diff[:, :, np.newaxis, :, :])\
+                    .reshape(self.input.shape[0], -1, self.height_out * self.width_out)
+        bottom_diff = col2img(pool_diff, self.input.shape[2], self.input.shape[3], self.kernel_size, self.input.shape[1], 0, self.stride)
 
         return bottom_diff
     def backward_raw_book(self, top_diff):
