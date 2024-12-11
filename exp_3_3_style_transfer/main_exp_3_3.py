@@ -66,9 +66,9 @@ if __name__ == '__main__':
     print('-------------------------')
     CONTENT_LOSS_LAYERS = ['relu4_2']
     STYLE_LOSS_LAYERS = ['relu1_1', 'relu2_1', 'relu3_1', 'relu4_1', 'relu5_1']
-    NOISE = .0
+    NOISE = 0.5
     ALPHA, BETA = 1, 500
-    TRAIN_STEP = 4
+    TRAIN_STEP = 1
     LEARNING_RATE = 1.0
     IMAGE_HEIGHT, IMAGE_WIDTH = 192, 320
 
@@ -82,12 +82,16 @@ if __name__ == '__main__':
 
     content_image, content_shape = vgg.load_image('../weinisi.jpg', IMAGE_HEIGHT, IMAGE_WIDTH)
     style_image, _ = vgg.load_image('../style.jpg', IMAGE_HEIGHT, IMAGE_WIDTH)
+    vgg.save_image(content_image, content_shape, 'output/output_origin' + '.jpg')
+
+    # It generate the GT
     content_layers = vgg.forward(content_image, CONTENT_LOSS_LAYERS)
     style_layers = vgg.forward(style_image, STYLE_LOSS_LAYERS)
+
+    # Initialize the img with Gaussian noise
     transfer_image = get_random_img(content_image, NOISE)
 
     start = time.time()
-    vgg.save_image(transfer_image, content_shape, 'output/output_origin' + '.jpg')
     for step in range(TRAIN_STEP):
         transfer_layers = vgg.forward(transfer_image, CONTENT_LOSS_LAYERS + STYLE_LOSS_LAYERS)
         content_loss = np.array([])
