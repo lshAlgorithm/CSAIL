@@ -53,7 +53,6 @@ def test_speed_up():
     if speedup_conv_forward_mse < 0.003 and speedup_conv_backward_mse < 0.003:
         print('SPEEDUP CONV TEST PASS.')
     else:
-        print(speedup_conv_forward_mse, speedup_conv_backward_mse)
         print('SPEEDUP CONV TEST FAILED.')
         exit()
 
@@ -68,7 +67,7 @@ if __name__ == '__main__':
     STYLE_LOSS_LAYERS = ['relu1_1', 'relu2_1', 'relu3_1', 'relu4_1', 'relu5_1']
     NOISE = 0.5
     ALPHA, BETA = 1, 500
-    TRAIN_STEP = 4
+    TRAIN_STEP = 2
     LEARNING_RATE = 1.0
     IMAGE_HEIGHT, IMAGE_WIDTH = 192, 320
 
@@ -81,7 +80,6 @@ if __name__ == '__main__':
     adam_optimizer = AdamOptimizer(1.0, [1, 3, IMAGE_HEIGHT, IMAGE_WIDTH])
 
     content_image, content_shape = vgg.load_image('../weinisi.jpg', IMAGE_HEIGHT, IMAGE_WIDTH)
-    vgg.save_image(content_image, content_shape, 'output/content_origin' + '.jpg')
     style_image, _ = vgg.load_image('../style.jpg', IMAGE_HEIGHT, IMAGE_WIDTH)
     content_layers = vgg.forward(content_image, CONTENT_LOSS_LAYERS)
     style_layers = vgg.forward(style_image, STYLE_LOSS_LAYERS)
@@ -96,23 +94,17 @@ if __name__ == '__main__':
         content_diff = np.zeros(transfer_image.shape)
         style_diff = np.zeros(transfer_image.shape)
         for layer in CONTENT_LOSS_LAYERS:
-            # TODO： 计算内容损失的前向传播
             current_loss = content_loss_layer.forward(transfer_layers[layer], content_layers[layer])
             content_loss = np.append(content_loss, current_loss)
-            # TODO： 计算内容损失的反向传播
             dloss = content_loss_layer.backward(transfer_layers[layer], content_layers[layer])
             content_diff += vgg.backward(dloss, layer)
         for layer in STYLE_LOSS_LAYERS:
-            # TODO： 计算风格损失的前向传播
             current_loss = style_loss_layer.forward(transfer_layers[layer], style_layers[layer])
             style_loss = np.append(style_loss, current_loss)
-            # TODO： 计算风格损失的反向传播
             dloss = style_loss_layer.backward(transfer_layers[layer], style_layers[layer])
             style_diff += vgg.backward(dloss, layer)
         total_loss = ALPHA * np.mean(content_loss) + BETA * np.mean(style_loss)
         image_diff = ALPHA * content_diff / len(CONTENT_LOSS_LAYERS) + BETA * style_diff / len(STYLE_LOSS_LAYERS)
-        # TODO： 利用Adam优化器对风格迁移图像进行更新
-        # We frozen the parameters in kernels, only update the pixel in transfer_image graph
         transfer_image = adam_optimizer.update(transfer_image, image_diff)
         if step % 1 == 0:
             print('Step %d, loss = %f' % (step, total_loss), content_loss, style_loss)

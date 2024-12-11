@@ -6,3 +6,6 @@
 *.jpg
 !output_*9.jpg
 !*_origin.jpg
+
+!style.jpg
+!weinisi.jpg
