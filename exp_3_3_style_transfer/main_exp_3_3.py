@@ -53,6 +53,7 @@ def test_speed_up():
     if speedup_conv_forward_mse < 0.003 and speedup_conv_backward_mse < 0.003:
         print('SPEEDUP CONV TEST PASS.')
     else:
+        print(speedup_conv_forward_mse, speedup_conv_backward_mse)
         print('SPEEDUP CONV TEST FAILED.')
         exit()
 

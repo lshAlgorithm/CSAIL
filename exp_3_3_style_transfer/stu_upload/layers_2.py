@@ -1,7 +1,9 @@
+# coding=utf-8
 import numpy as np
 import struct
 import os
 import time
+from numpy.testing import assert_equal
 
 # Optimization funcs, details can be viewed in `ConvolutionalLayer.forward_speedup()`
 def img2col(input, height_out, width_out, kernel_size, stride):
@@ -32,7 +34,7 @@ class ConvolutionalLayer(object):
         self.stride = stride
         self.forward = self.forward_raw
         self.backward = self.backward_raw
-        if type == 1:  # type 设为 1 时，使用优化后的 foward 和 backward 函数
+        if type == 1:  
             self.forward = self.forward_speedup
             self.backward = self.backward_speedup
         print('\tConvolutional layer with kernel size %d, input channel %d, output channel %d.' % (self.kernel_size, self.channel_in, self.channel_out))
@@ -80,7 +82,7 @@ class ConvolutionalLayer(object):
 
         # First transform the input matrix[N, C, H, W] into [N * H * W, C * K * K], where K is kernel_size;
         # ps. pay attention to the relation between `out` and `kernel_size`, which can perfectly fit in the input matrix
-        self.img2col = np.zeros([self.input.shape[0] * height_out * width_out, 
+        self.input_col = np.zeros([self.input.shape[0] * height_out * width_out, 
                                  self.channel_in * self.kernel_size * self.kernel_size])
         
         for idxn in range(self.input.shape[0]):
@@ -88,15 +90,18 @@ class ConvolutionalLayer(object):
                 for idxw in range(width_out):
                     h_now = idxh * self.stride
                     w_now = idxw * self.stride
-                    self.img2col[idxn * height_out * width_out + idxh * width_out + idxw, :] = \
+                    self.input_col[idxn * height_out * width_out + idxh * width_out + idxw, :] = \
                         self.input_pad[idxn, :, h_now : h_now + self.kernel_size, w_now : w_now + self.kernel_size] \
                         .reshape([-1]) # reshape to automatically fit in the matrix, syntactic sugar!
 
 
         # Then, transform the kernel matrix[Ci, K, K, Co] into [Ci * K * K, Co].
-        weight_reshape = np.reshape(self.weight, [-1, self.channel_out])
-        self.output = np.matmul(self.img2col, weight_reshape) + self.bias # the add operator is also optimized by BLAS in numpy. How can python provide matadd by default?
-
+        self.weight_col = self.weight.reshape([-1, self.channel_out])
+        output = np.matmul(self.weight_col.T, self.input_col.T).T + self.bias  # the add operator is also optimized by BLAS in numpy. How can python provide matadd by default?
+        
+        self.output = output.reshape([self.input.shape[0], height_out, width_out, -1]).transpose([0, 3, 1, 2])
+        assert_equal(self.output.shape, (self.input.shape[0], self.channel_out, height_out, width_out))
+        
         self.forward_time = time.time() - start_time
         return self.output
     def backward_speedup(self, top_diff):
@@ -105,8 +110,8 @@ class ConvolutionalLayer(object):
 
         height_pad = self.input.shape[2] + self.padding * 2
         width_pad = self.input.shape[3] + self.padding * 2
-        bottom_diff_col = np.matmul(self.img2col.T, top_diff.transpose(1, 2, 3, 0).reshape(self.channel_out, -1)) \
-                            .reshape(bottom_diff_col.shape[0], -1, self.input.shape[0]).transpose(2, 0, 1)
+        bottom_diff_col = np.matmul(self.weight_col, top_diff.transpose(1, 2, 3, 0).reshape(self.channel_out, -1))
+        bottom_diff_col = bottom_diff_col.reshape(bottom_diff_col.shape[0], -1, self.input.shape[0]).transpose(2, 0, 1)
         bottom_diff = col2img(bottom_diff_col, height_pad, width_pad, self.kernel_size, self.channel_in, self.padding, self.stride)
 
 
