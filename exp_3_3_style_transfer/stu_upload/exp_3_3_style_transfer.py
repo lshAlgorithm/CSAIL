@@ -170,7 +170,7 @@ if __name__ == '__main__':
     STYLE_LOSS_LAYERS = ['relu1_1', 'relu2_1', 'relu3_1', 'relu4_1', 'relu5_1']
     NOISE = 0.5
     ALPHA, BETA = 1, 500
-    TRAIN_STEP = 100
+    TRAIN_STEP = 1
     LEARNING_RATE = 1.0
     IMAGE_HEIGHT, IMAGE_WIDTH = 192, 320
 
@@ -183,7 +183,10 @@ if __name__ == '__main__':
     adam_optimizer = AdamOptimizer(1.0, [1, 3, IMAGE_HEIGHT, IMAGE_WIDTH])
 
     content_image, content_shape = vgg.load_image('../../weinisi.jpg', IMAGE_HEIGHT, IMAGE_WIDTH)
+    vgg.save_image(content_image, content_shape, 'origin_content' + '.jpg')
     style_image, _ = vgg.load_image('../../style.jpg', IMAGE_HEIGHT, IMAGE_WIDTH)
+    vgg.save_image(content_image, content_shape, 'check_content' + '.jpg')
+
     content_layers = vgg.forward(content_image, CONTENT_LOSS_LAYERS)
     style_layers = vgg.forward(style_image, STYLE_LOSS_LAYERS)
     transfer_image = get_random_img(content_image, NOISE)
