@@ -3,5 +3,6 @@
 /mnist_data
 *.zip
 
-# *.jpg
-# !output_*9.jpg
+*.jpg
+!output_*9.jpg
+!*_origin.jpg

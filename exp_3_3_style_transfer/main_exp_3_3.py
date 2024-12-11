@@ -81,6 +81,7 @@ if __name__ == '__main__':
     adam_optimizer = AdamOptimizer(1.0, [1, 3, IMAGE_HEIGHT, IMAGE_WIDTH])
 
     content_image, content_shape = vgg.load_image('../weinisi.jpg', IMAGE_HEIGHT, IMAGE_WIDTH)
+    vgg.save_image(content_image, content_shape, 'output/content_origin' + '.jpg')
     style_image, _ = vgg.load_image('../style.jpg', IMAGE_HEIGHT, IMAGE_WIDTH)
     content_layers = vgg.forward(content_image, CONTENT_LOSS_LAYERS)
     style_layers = vgg.forward(style_image, STYLE_LOSS_LAYERS)
