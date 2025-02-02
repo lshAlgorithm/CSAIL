@@ -1,0 +1,13 @@
+Script started on 2024-02-26 16:56:19+08:00 [TERM="xterm" TTY="/dev/pts/1" COLUMNS="207" LINES="59"]
+(pytorch) \[\e]0;\u@\h: \w\a\]\u@\h:\w$ l^H^H^C
+(pytorch) \[\e]0;\u@\h: \w\a\]\u@\h:\w$ l^H^H^H^H^H^H
+sh: 1: l: not found
+(pytorch) \[\e]0;\u@\h: \w\a\]\u@\h:\w$ 
+(pytorch) \[\e]0;\u@\h: \w\a\]\u@\h:\w$ 
+(pytorch) \[\e]0;\u@\h: \w\a\]\u@\h:\w$ cd -
+/opt/code_chap_8_student/stable_diffusion/ldm
+(pytorch) \[\e]0;\u@\h: \w\a\]\u@\h:\w$ ls
+__pycache__  data  models  modules  util.py
+(pytorch) \[\e]0;\u@\h: \w\a\]\u@\h:\w$ 
+
+Script done on 2024-02-26 16:56:38+08:00 [COMMAND_EXIT_CODE="0"]
