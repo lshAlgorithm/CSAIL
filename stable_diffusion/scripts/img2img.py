@@ -64,7 +64,7 @@ def load_img(path):
 def main():
     parser = argparse.ArgumentParser()
     #TODO:设置prompt参数为 "A fantasy landscape, trending on artstation"
-    parser.add_argument("______", type=str, nargs="?", default="__________________________________________", help="the prompt to render")
+    parser.add_argument("--prompt", type=str, nargs="?", default="a fantasy landscape, trending on artstation", help="the prompt to render")
     parser.add_argument("--init-img", type=str, nargs="?", help="path to the input image")
     parser.add_argument("--outdir", type=str, nargs="?", help="dir to write results to", default="outputs/img2img-samples")
     parser.add_argument("--ddim_steps", type=int, default=50, help="number of ddim sampling steps")
@@ -79,9 +79,9 @@ def main():
     parser.add_argument("--strength", type=float, default=0.8, help="strength for noising/unnoising. 1.0 corresponds to full destruction of information in init image")
     parser.add_argument("--from-file", type=str, help="if specified, load prompts from this file")
     #TODO:设置config参数为configs/stable-diffusion/v2-inference-v.yaml
-    parser.add_argument("______", type=str, default="__________________________________________", help="path to config which constructs model")
+    parser.add_argument("--config", type=str, default="configs/stable-diffusion/v2-inference-v.yaml", help="path to config which constructs model")
     #TODO:设置ckpt参数为./models/v2-1_768-nonema-pruned.ckpt 
-    parser.add_argument("______", type=str, default="__________________________________________", help="path to checkpoint of model")
+    parser.add_argument("--ckpt", type=str, default="./models/v2-1_768-nonema-pruned.ckpt", help="path to checkpoint of model")
     parser.add_argument("--seed", type=int, default=42, help="the seed (for reproducible sampling)")
     parser.add_argument("--precision", type=str, help="evaluate at this precision", choices=["full", "autocast"], default="autocast")
 
@@ -128,10 +128,10 @@ def main():
 
     assert os.path.isfile(opt.init_img)
     #TODO:调用load_img函数对输入opt.init_img进行操作
-    init_image = ______________________.to(device)
+    init_image = load_img(opt.init_img).to(device)
     init_image = repeat(init_image, '1 ... -> b ...', b=batch_size)
     #TODO:调用model.encode_first_stage函数对输入init_image进行操作，再将结果作为model.get_first_stage_encoding函数的输入得到初始潜在特征
-    init_latent = _______________________________________________  # move to latent space
+    init_latent = model.get_first_stage_encoding(model.encode_first_stage(init_image))  # move to latent space
 
     sampler.make_schedule(ddim_num_steps=opt.ddim_steps, ddim_eta=opt.ddim_eta, verbose=False)
     print("make_schedule PASS!")
@@ -153,18 +153,18 @@ def main():
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
                         #TODO:调用model.get_learned_conditioning函数对prompts进行操作得到约束条件
-                        c = _______________________________________
+                        c = model.get_learned_conditioning(prompts)
 
                         # encode (scaled latent)
                         #TODO:调用sampler.stochastic_encode函数对输入初始潜在特征进行操作得到约束条件
-                        z_enc = _________(___________, torch.tensor([t_enc] * batch_size).to(device))
+                        z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc] * batch_size).to(device))
                         st_encbool = True
                         # decode it
                         #TODO:调用sampler.decode函数，输入包括t_enc、uc、c、z_enc
-                        samples =_________________________, unconditional_guidance_scale=opt.scale)                   
+                        samples = sampler.decode(t_enc, uc, c, z_enc, use_original_steps=False, unconditional_guidance_scale=opt.scale)                   
                         dimdecodebool=True
                         #TODO:调用model.decode_first_stage函数对输入samples进行操作
-                        x_samples = _________________________________
+                        x_samples = model.decode_first_stage(samples)
                         x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
 
                         for x_sample in x_samples:

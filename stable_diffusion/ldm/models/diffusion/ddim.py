@@ -54,14 +54,14 @@ class DDIMSampler(object):
         ddim_sigmas, ddim_alphas, ddim_alphas_prev = make_ddim_sampling_parameters(
             alphacums=alphas_cumprod.cpu(), ddim_timesteps=self.ddim_timesteps, eta=ddim_eta, verbose=verbose)
         # TODO: 定义ddim_sigmas
-        self.register_buffer('ddim_sigmas', ___________)
+        self.register_buffer('ddim_sigmas', ddim_sigmas)
         # TODO: 定义ddim_alphas
-        self.register_buffer('ddim_alphas', ___________)
+        self.register_buffer('ddim_alphas', ddim_alphas)
         # TODO: 定义ddim_alphas_prev
-        self.register_buffer('ddim_alphas_prev', ________________)
+        self.register_buffer('ddim_alphas_prev', ddim_alphas_prev)
         # TODO: 定义ddim_sqrt_one_minus_alphas运算
         self.register_buffer('ddim_sqrt_one_minus_alphas',
-                             _________________________)
+                             to_torch(np.sqrt(1. - ddim_alphas)))
         sigmas_for_original_sampling_steps = ddim_eta * torch.sqrt((1 - self.alphas_cumprod_prev) / (
             1 - self.alphas_cumprod) * (1 - self.alphas_cumprod / self.alphas_cumprod_prev))
         self.register_buffer('ddim_sigmas_for_original_num_steps',
@@ -101,19 +101,16 @@ class DDIMSampler(object):
                     ctmp = ctmp[0]
                 cbs = ctmp.shape[0]
                 if cbs != batch_size:
-                    print(f"Warning: Got {
-                          cbs} conditionings but batch-size is {batch_size}")
+                    print(f"Warning: Got {cbs} conditionings but batch-size is {batch_size}")
 
             elif isinstance(conditioning, list):
                 for ctmp in conditioning:
                     if ctmp.shape[0] != batch_size:
-                        print(f"Warning: Got {
-                              cbs} conditionings but batch-size is {batch_size}")
+                        print(f"Warning: Got {cbs} conditionings but batch-size is {batch_size}")
 
             else:
                 if conditioning.shape[0] != batch_size:
-                    print(f"Warning: Got {
-                          conditioning.shape[0]} conditionings but batch-size is {batch_size}")
+                    print(f"Warning: Got {conditioning.shape[0]} conditionings but batch-size is {batch_size}")
 
         self.make_schedule(ddim_num_steps=S, ddim_eta=eta, verbose=verbose)
         # sampling
@@ -158,13 +155,11 @@ class DDIMSampler(object):
         if timesteps is None:
             timesteps = self.ddpm_num_timesteps if ddim_use_original_steps else self.ddim_timesteps
         elif timesteps is not None and not ddim_use_original_steps:
-            subset_end = int(min(
-                timesteps / self.ddim_timesteps.shape[0], 1) * self.ddim_timesteps.shape[0]) - 1
+            subset_end = int(min(timesteps / self.ddim_timesteps.shape[0], 1) * self.ddim_timesteps.shape[0]) - 1
             timesteps = self.ddim_timesteps[:subset_end]
 
         intermediates = {'x_inter': [img], 'pred_x0': [img]}
-        time_range = reversed(
-            range(0, timesteps)) if ddim_use_original_steps else np.flip(timesteps)
+        time_range = reversed(range(0, timesteps)) if ddim_use_original_steps else np.flip(timesteps)
         total_steps = timesteps if ddim_use_original_steps else timesteps.shape[0]
         print(f"Running DDIM Sampling with {total_steps} timesteps")
 
@@ -254,14 +249,14 @@ class DDIMSampler(object):
         # select parameters corresponding to the currently considered timestep
         a_t = torch.full((b, 1, 1, 1), alphas[index], device=device)
         a_prev = torch.full((b, 1, 1, 1), alphas_prev[index], device=device)
-        sigma_t = torch.full((b, 1, 1, 1), sigmas[index], device=device)
+        sigma_t = torch.full((b, 1, 1, 1), sigmas[index], device=device) # standard deviation of noise for the current step
         sqrt_one_minus_at = torch.full(
             (b, 1, 1, 1), sqrt_one_minus_alphas[index], device=device)
 
         # current prediction for x_0
         if self.model.parameterization != "v":
             # TODO: 根据公式8.11计算pred_x0
-            pred_x0 = _____________________________ / __________
+            pred_x0 = (x - sqrt_one_minus_at * e_t) / a_t.sqrt()
         else:
             pred_x0 = self.model.predict_start_from_z_and_v(x, t, model_output)
 
@@ -273,14 +268,14 @@ class DDIMSampler(object):
 
         # direction pointing to x_t
         # TODO: 根据公式8.11计算dir_xt
-        dir_xt = _______________________________________
+        dir_xt = (1. - a_prev - sigma_t ** 2).sqrt() * e_t
         # TODO: 根据公式8.11计算noise
-        noise = __________noise_like(
-            x.shape, device, repeat_noise) * temperature
+        noise = sigma_t *noise_like(x.shape, device, repeat_noise) * temperature
         if noise_dropout > 0.:
             noise = torch.nn.functional.dropout(noise, p=noise_dropout)
         # TODO: 根据公式8.11计算x_prev
-        x_prev = _______________________ + dir_xt + noise
+        # a_prev and a_t are to adjust the scale of the noise to match the scale of the targeted x_t
+        x_prev = a_prev.sqrt() * pred_x0 + dir_xt + noise
         return x_prev, pred_x0
 
     @torch.no_grad()
@@ -348,13 +343,13 @@ class DDIMSampler(object):
         if noise is None:
             noise = torch.randn_like(x0)
         # TODO: 根据公式8.4计算xt并返回
-        ______(extract_into_tensor(___________________, t, x0.shape) * __ +
-               extract_into_tensor(_____________________________, t, x0.shape) * ______)
+        return (extract_into_tensor(sqrt_alphas_cumprod, t, x0.shape) * x0 +
+               extract_into_tensor(sqrt_one_minus_alphas_cumprod, t, x0.shape) * noise)
 
     @torch.no_grad()
     def decode(self, x_latent, cond, t_start, unconditional_guidance_scale=1.0, unconditional_conditioning=None, use_original_steps=False, callback=None):
         # TODO: 配置时间步序列,若use_original_steps则选择ddpm的时间步序列，否则使用ddim的时间步序列
-        timesteps = _________________________________________________________________________________
+        timesteps = self.ddpm_num_timesteps if use_original_steps else self.ddim_timesteps
         timesteps = timesteps[:t_start]
 
         time_range = np.flip(timesteps)
@@ -368,7 +363,9 @@ class DDIMSampler(object):
             ts = torch.full(
                 (x_latent.shape[0],), step, device=x_latent.device, dtype=torch.long)
             # TODO: 调用采样函数p_sample_ddim
-            x_dec, _ = _____________________________________________________________________________
+            x_dec, _ = self.p_sample_ddim(x_dec, cond, ts, index=index, use_original_steps=use_original_steps,
+                                          unconditional_guidance_scale=unconditional_guidance_scale,
+                                          unconditional_conditioning=unconditional_conditioning)
             if callback:
                 callback(i)
         return x_dec

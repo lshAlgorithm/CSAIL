@@ -22,10 +22,10 @@ torch.set_grad_enabled(False)
 def put_watermark(img, wm_encoder=None):
     if wm_encoder is not None:
         #TODO: 将图片从RGB格式转换为BGR格式（OpenCV默认格式）
-        img = ___________________________________________
+        img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
         img = wm_encoder.encode(img, 'dwtDct')
         #TODO: 将编码后的图片数组转换为PIL格式，并转换为RGB格式
-        img = ___________________________________________
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     return img
 
 
@@ -34,13 +34,13 @@ def initialize_model(config, ckpt):
     model = instantiate_from_config(config.model)
 
     #TODO: 加载模型参数
-    ___________________________________________
+    model.load_state_dict(torch.load(ckpt)["state_dict"], strict=False)
     #TODO: 根据系统环境来选择运行设备,如果支持 MLU 设备，则选择 MLU 设备，否则选择 CPU。
-    device = ___________________________________________
+    device = torch.device("mlu") if torch.mlu.is_available() else torch.device("cpu")
     #TODO: 将模型加载到指定设备
-    model = ___________________________________________
+    model = model.to(device)
     #TODO: 使用DDIMSampler对模型进行采样
-    sampler = ___________________________________________
+    sampler = DDIMSampler(model, device=device)
 
     return sampler
 
@@ -52,24 +52,24 @@ def make_batch_sd(
         device,
         num_samples=1):
     #TODO: 将输入图片转换为RGB格式的NumPy数组
-    image =______________________________________________
+    image = np.array(image.convert("RGB"))
     #TODO: 添加一个维度，并将维度顺序从HWC转换为BCHW
-    image = ______________________________________________
+    image = image[None, :, :, :].transpose(0, 3, 1, 2)
     #TODO: 将NumPy数组转换为PyTorch张量，进行归一化处理，使像素值范围在[-1, 1]之间
-    image = ______________________________________________
+    image = (torch.from_numpy(image).float() / 255.0 - 0.5) * 2.0
+
 
     mask = np.array(mask.convert("L"))
     #TODO: 将掩码数组转换为浮点数并归一化处理，使像素值范围在[0, 1]之间
-    mask = ______________________________________________
-    mask = mask[None, None]
+    mask = mask.astype(np.float32) / 255.0
     #TODO: 将掩码数组中小于0.5的像素值设为0，表示不需要修复的部分
-    ______________________________________________
+    mask[mask < 0.5] = 0.0
     #TODO: 将掩码数组中大于等于0.5的像素值设为1，表示需要修复的部分
-    ______________________________________________
+    mask[mask >= 0.5] = 1.0
     #TODO: 将NumPy数组转换为PyTorch张量
-    mask = ______________________________________________
+    mask = torch.from_numpy(mask)[None, None, :, :].to(device=device)
     #TODO: 使用掩码对输入图片进行掩码处理，将不需要修复的部分设置为0
-    masked_image = ______________________________________________
+    masked_image = image * mask
 
     batch = {
         "image": repeat(image.to(device=device), "1 ... -> n ...", n=num_samples),
@@ -93,13 +93,14 @@ def inpaint(sampler, image, mask, prompt, seed, scale, ddim_steps, num_samples=1
     prng = np.random.RandomState(seed)
     start_code = prng.randn(num_samples, 4, h // 8, w // 8)
     #TODO：将 NumPy 数组 start_code 转换为 PyTorch 张量，并将其发送到指定的设备上，并指定数据类型为 torch.float32。
-    start_code = ______________________________________________
+    start_code = torch.from_numpy(start_code).to(device=device, dtype=torch.float32)
 
 
     #TODO:关闭梯度计算，启用MLU自动混合精度
-    with _________________________________________________:
+    # Investigate the mixed precision issue
+    with torch.no_grad():
         #TODO:调用函数构造批次数据
-        batch = _________________________________________________
+        batch = make_batch_sd(image, mask, prompt, device, num_samples)
 
         c = model.cond_stage_model.encode(batch["txt"])
 
@@ -113,7 +114,7 @@ def inpaint(sampler, image, mask, prompt, seed, scale, ddim_steps, num_samples=1
                 cc = model.get_first_stage_encoding(
                     model.encode_first_stage(cc))
             #TODO：将处理后的数据添加到列表中    
-            _________________________________________________
+            c_cat.append(cc)
         c_cat = torch.cat(c_cat, dim=1)
 
         # cond
@@ -140,7 +141,8 @@ def inpaint(sampler, image, mask, prompt, seed, scale, ddim_steps, num_samples=1
         result = torch.clamp((x_samples_ddim + 1.0) / 2.0,
                              min=0.0, max=1.0)
         #TODO:将生成的图片结果从 PyTorch 张量转换为 NumPy 数组，并将维度顺序调整为常用的图像格式，最后将像素值恢复到原始范围
-        result = _________________________________________________
+        # result = (1-mask) * image + mask * result
+        result = result.cpu().numpy().transpose(0, 2, 3, 1)[0] * 255
     return [put_watermark(Image.fromarray(img.astype(np.uint8)), wm_encoder) for img in result]
 
 def pad_image(input_image):
@@ -152,21 +154,21 @@ def pad_image(input_image):
 
 def predict(input_image, prompt, ddim_steps, num_samples, scale, seed):
     #TODO: 从输入图像中获取原始图像，并转换为RGB模式
-    init_image = _________________________________________________
+    init_image = Image.open(input_image).convert("RGB")
     #TODO: 从输入图像中获取掩码图像，并转换为RGB模式
-    init_mask = _________________________________________________
+    init_mask = Image.open(input_image).convert("RGB")
     #TODO: 调用函数对原始图像和掩码图像进行填充
-    image = _________________________________________________ # resize to integer multiple of 32
-    mask = _________________________________________________ # resize to integer multiple of 32
+    image = pad_image(init_image) # resize to integer multiple of 32
+    mask = pad_image(init_mask) # resize to integer multiple of 32
     width, height = image.size
     print("Inpainting...", width, height)
     #TODO： 调用图像修复函数进行修复
-    result = _________________________________________________
+    result = inpaint(sampler, image, mask, prompt, seed, scale, ddim_steps, num_samples, width, height)
 
     return result
 
 #TODO：调用函数初始化模型
-sampler = __________________________(sys.argv[1], sys.argv[2])
+sampler = initialize_model(sys.argv[1], sys.argv[2])
 
 block = gr.Blocks().queue()
 with block:
@@ -197,7 +199,7 @@ with block:
             gallery = gr.Gallery(label="Generated images", show_label=False).style(
                 grid=[2], height="auto")
     #TODO: 定义点击按钮时执行的函数，即调用 predict 函数进行图像修复
-    run_button.click(fn=__________________________, inputs=__________________________________, outputs=[gallery])
+    run_button.click(fn=lambda: predict(input_image.value, prompt.value, ddim_steps.value, num_samples.value, scale.value, seed.value), inputs=[input_image, prompt, ddim_steps, num_samples, scale, seed], outputs=[gallery])
 
 
 block.launch(share=True)
