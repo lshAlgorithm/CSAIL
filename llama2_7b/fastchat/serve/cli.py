@@ -36,7 +36,7 @@ class SimpleChatIO(ChatIO):
             #TODO: 移除文本两端的空白字符，然后按空格分割
             output_text = output_text.strip().split(" ")
             #TODO: 获取处理后的文本中单词的数量
-            now = len(output_text.split())
+            now = len(output_text) - 1
             if now > pre:
                 # 输出不同于前次的部分,其中，新增的内容以空格分隔的形式显示，确保每次新增的内容都在同一行，并及时刷新输出缓冲区。
                 print(" ".join(output_text[pre:]), end=" ", flush=True)

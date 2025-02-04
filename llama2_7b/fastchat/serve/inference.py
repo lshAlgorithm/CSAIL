@@ -52,7 +52,7 @@ def prepare_logits_processor(
     return processor_list
 
 
-@torch.inference_mode()
+# @torch.inference_mode()
 def generate_stream(
     model, tokenizer, params, device, context_len=2048, stream_interval=2
 ):
@@ -265,7 +265,8 @@ def generate_stream(
     del past_key_values, out
     gc.collect()
     #TODO:释放MLU设备上的缓存空间
-    torch_mlu._MLUC._release_cache()
+    torch.mlu.empty_cache()
+
 
 
 class ChatIO(abc.ABC):
@@ -310,10 +311,10 @@ def chat_loop(
 
     #TODO: 如果提供了对话模板，使用提供的模板,调用get_conv_template创建会话对象
     if conv_template:
-        conv = get_conv_template(conv_template, SeparatorStyle.PARAGRAPH)
+        conv = get_conv_template(conv_template)
     else:
         #TODO:否则使用默认的对话模板,调用get_conversation_template创建会话对象
-        conv = get_conversation_template()
+        conv = get_conversation_template(model_path)
     print("GENERATE STEAM PASS!")   
     while True:
         try:
