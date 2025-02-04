@@ -124,29 +124,29 @@ def disable_torch_init():
 
 
 def get_gpu_memory(max_gpus=None):
-    """Get available memory for each GPU."""
+    """Get available memory for each MLU device."""
     #TODO: 存储每个GPU的可用内存信息
-    gpu_memory = _____________________________________________
+    gpu_memory = [] # This should be given beforehand, I have no idea where it will be used.
     #TODO: 获取MLU设备的数量，如果未指定最大GPU数（max_gpus为None），则使用所有可用设备;否则，使用max_gpus和实际设备数量中的较小值
     num_gpus = (
-    __________________________________________________________
+        torch_mlu.device_count() if max_gpus is None else min(max_gpus, torch_mlu.device_count())
     )
 
     for gpu_id in range(num_gpus):
         #TODO: 将当前MLU设备设置为gpu_id
-        _____________________________________________
+        with torch_mlu.device(f"mlu{gpu_id}"):
             #TODO: 获取当前MLU设备
-            device = _____________________________________________
+            device = torch_mlu.current_device()
             #TODO: 获取当前MLU设备的属性
-            gpu_properties = _____________________________________________
+            gpu_properties = torch_mlu.get_device_properties(device)
             #TODO: 获取总内存，单位转换为GB
-            total_memory = _____________________________________________
+            total_memory = gpu_properties.total_memory / (1024 ** 3) # The default unit is Byte
             #TODO: 获取已分配内存，单位转换为GB
-            allocated_memory = _____________________________________________
+            allocated_memory = gpu_properties.allocated_memory / (1024 ** 3)
             #TODO: 计算可用内存，单位转换为GB
-            available_memory = _____________________________________________
+            available_memory = total_memory - allocated_memory
             #TODO:将可用内存信息添加到列表中
-            _____________________________________________
+            gpu_memory.append(available_memory)
     return gpu_memory
 
 

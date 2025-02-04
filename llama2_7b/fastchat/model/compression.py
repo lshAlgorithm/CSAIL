@@ -171,10 +171,12 @@ def compress(tensor, config):
             [tensor, torch.zeros(pad_shape, dtype=tensor.dtype, device=tensor.device)],
             dim=group_dim,
         )
-    data = tensor.view(new_shape)
+    data = tensor.view(new_shape)   # [N, C, H, W] -> [N, G, Gs, C, H, W]
 
     # Quantize
     if symmetric:
+
+        # Matrix operation!(Tensor!)
         B = 2 ** (num_bits - 1) - 1
         scale = B / torch.max(data.abs(), dim=group_dim + 1, keepdim=True)[0]
         data = data * scale
