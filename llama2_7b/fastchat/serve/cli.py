@@ -53,7 +53,7 @@ class RichChatIO(ChatIO):
         self._prompt_session = PromptSession(history=InMemoryHistory())
         #TODO: 创建自动补全器，用于用户输入的自动完成
         self._completer = WordCompleter(
-            words=["!exit", "!reset"], pattern=re.compile("$")
+            words=["!exit", "!reset"], pattern=re.compile("$") # differs here
         )
         #TODO:创建Console 实例，在命令行界面中以更丰富的样式显示文本
         self._console = Console()
