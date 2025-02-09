@@ -16,8 +16,8 @@ from fairscale.nn.model_parallel.layers import (
 )
 from torch import nn
 #TODO:检查是否有 MLU设备可用，如果可用，则将设备类型设置为 "mlu"
-if ___________________________________________
-    device = _________________________________
+if torch.mlu.is_available():
+    device = "mlu"
 elif torch.backends.mps.is_available():
     device = "mps"
 else:
@@ -44,27 +44,28 @@ class RMSNorm(torch.nn.Module):
         super().__init__()
         self.eps = eps
         #TODO: 初始化可学习的参数 weight，维度为 dim
-        self.weight =____________________________________________________
+        self.weight = nn.Parameter(torch.ones(dim))
 
     def _norm(self, x):
         #TODO:  计算RMS 归一化
-        return ____________________________________________________
+        # i.e. x / sqrt(mean(x^2))
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x):
         #TODO：执行 RMS 归一化，并将结果的数据类型设为与输入张量 x 一致
-        output = ____________________________________________________
+        output = self._norm(x)
         return output * self.weight
 
 
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
     freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
     #TODO：创建建了一个张量 t，包含从 0 到 end - 1 的整数值，并根据 freqs 的设备来设置设备属性。
-    t = ________________________________________________________________
+    t = torch.arange(0, end, device=freqs.device).float()
     #TODO：将 t 和 freqs 的值计算出外积
-    freqs = ________________________________________________________________
+    freqs = torch.outer(t, freqs) # freqs.shape = (end, dim // 2)
     #TODO：将频率值转换为复数形式的张量，其中每个元素表示一个复数，其幅度为 1，角度由 freqs 张量给出
-    freqs_cis = ________________________________________________________________
-    return freqs_cis
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)
+    return freqs_cis # you can search with index to get the corresponding complex number
 
 
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
@@ -86,7 +87,7 @@ def apply_rotary_emb(
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
     xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
     #TODO: 将旋转频率张量调整为与输入张量xq_广播兼容的形状
-    freqs_cis = __________________________________________
+    freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
     xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
     xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
     return xq_out.type_as(xq).to(device), xk_out.type_as(xk).to(device)
@@ -114,6 +115,7 @@ class Attention(nn.Module):
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
         self.head_dim = args.dim // args.n_heads
 
+        # NOTE: how it is implemented
         self.wq = ColumnParallelLinear(
             args.dim,
             args.n_heads * self.head_dim,
@@ -167,16 +169,18 @@ class Attention(nn.Module):
         freqs_cis: torch.Tensor,
         mask: Optional[torch.Tensor],
     ):
+        # bsz: batch size, seqlen: sequence length, dim: hidden dimension
         bsz, seqlen, _ = x.shape
         #TODO: 获取Q、K、V
-        xq, xk, xv = _________________________________________________
+        xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
 
         xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         xk = xk.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
         xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
         #TODO: 对Q和K应用旋转嵌入
-        xq, xk = __________________________________________________
+        xq, xk = apply_rotary_emb(xq, xk, freqs_cis)
 
+        # transform to the target tensor type
         self.cache_k = self.cache_k.to(xq)
         self.cache_v = self.cache_v.to(xq)
 
@@ -194,13 +198,13 @@ class Attention(nn.Module):
         keys = keys.transpose(1, 2)
         values = values.transpose(1, 2)
         #TODO: 根据注意力机制的公式计算查询张量 xq 与键张量 keys 的点积注意力得分,并进行缩放
-        scores = ___________________________________________________________
+        scores = torch.matmul(xq, keys.transpose(-2, -1)) / math.sqrt(self.head_dim)
         if mask is not None:
             scores = scores + mask  # (bs, n_local_heads, seqlen, cache_len + seqlen)
         #TODO:使用 softmax 函数将注意力分数 scores 沿着最后一个维度进行归一化，并将结果转换为与输入张量 xq 相同的数据类型以获得注意力权重
-        scores = ___________________________________________________________
+        scores = F.softmax(scores, dim=-1).type_as(xq)
         #TODO: 将注意力权重与值相乘，得到最终输出
-        output = ______________________________________________________ # (bs, n_local_heads, seqlen, head_dim)
+        output = torch.matmul(scores, values) # (bs, n_local_heads, seqlen, head_dim)
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
         return self.wo(output)
 
@@ -232,7 +236,7 @@ class FeedForward(nn.Module):
 
     def forward(self, x):
         #TODO: 补全前馈神经网络的前向传播过程
-        return _____________________________________________________
+        return self.w2(F.silu(self.w1(x)))
 
 
 class TransformerBlock(nn.Module):
@@ -242,9 +246,9 @@ class TransformerBlock(nn.Module):
         self.dim = args.dim
         self.head_dim = args.dim // args.n_heads
         #TODO: 添加注意力层
-        self.attention = ___________________________________________
+        self.attention = Attention(args)
         #TODO: 创建前馈网络层
-        self.feed_forward = _________________________(
+        self.feed_forward = FeedForward(
             dim=args.dim,
             hidden_dim=4 * args.dim,
             multiple_of=args.multiple_of,
@@ -252,8 +256,8 @@ class TransformerBlock(nn.Module):
         )
         self.layer_id = layer_id
         #TODO:添加RMS归一化
-        self.attention_norm = ___________________________________________
-        self.ffn_norm = ___________________________________________
+        self.attention_norm = RMSNorm(args.dim, args.norm_eps)
+        self.ffn_norm = RMSNorm(args.dim, args.norm_eps)
 
     def forward(
         self,
@@ -280,17 +284,17 @@ class Transformer(nn.Module):
             params.vocab_size, params.dim, init_method=lambda x: x,
         )
         #TODO: 创建PyTorch 中用于存储子模块的容器
-        self.layers = _______________________________________________
+        self.layers = nn.ModuleList()
         for layer_id in range(params.n_layers):
             #TODO：将 TransformerBlock 的层添加到模型的层列表中。
-            _______________________________________________
+            self.layers.append(TransformerBlock(layer_id, params))
         #TODO: 初始化RMS归一化层
-        self.norm = _______________________________________________
+        self.norm = RMSNorm(params.dim, params.norm_eps)
         self.output = ColumnParallelLinear(
             params.dim, params.vocab_size, bias=False, init_method=lambda x: x
         )
         #调用函数计算用于多头自注意力机制中的频率值。
-        self.freqs_cis = _______________________(
+        self.freqs_cis = precompute_freqs_cis(
             self.params.dim // self.params.n_heads,
             self.params.max_seq_len * 2,
             params.rope_theta,
@@ -300,11 +304,11 @@ class Transformer(nn.Module):
     def forward(self, tokens: torch.Tensor, start_pos: int):
         _bsz, seqlen = tokens.shape
         #TODO：获取 tokens的embeddings
-        h = ________________________________________________________
+        h = self.tok_embeddings(tokens)
         #TODO: 将 self.freqs_cis 张量移动到 MLU 或 CPU 设备上，以便在该设备上进行后续计算
-        self.freqs_cis = ________________________________________________________
+        self.freqs_cis = self.freqs_cis.to(h.device)
         #TODO：从 self.freqs_cis 中提取一个长度为 seqlen 的子张量，其初始位置为start_pos
-        freqs_cis =________________________________________________________
+        freqs_cis = self.freqs_cis[:, start_pos : start_pos + seqlen]
 
         mask = None
         if seqlen > 1:

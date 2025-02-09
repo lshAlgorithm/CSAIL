@@ -23,12 +23,12 @@ from llama_mlu.tokenizer import Tokenizer
 
 
 #TODO: 如果 MLU 设备可用
-____________________________________
+if torch.mlu.is_available():
 #TODO: 将设备设置为 MLU
-    device = ____________________________________
+    device = "mlu"
 else:
 #TODO: 将设备设置为 CPU
-    device = ____________________________________
+    device = "cpu"
 
 Role = Literal["system", "user", "assistant"]
 
@@ -79,7 +79,7 @@ class Llama:
         if not torch.distributed.is_initialized():
             if device == "mlu":
                 #TODO: 使用 MLU 设备初始化分布式进程组
-                ________________________________________________
+                torch.distributed.init_process_group(backend="mlu") # NOTE: how it is implemented
             else:
                 torch.distributed.init_process_group("gloo")
         if not model_parallel_is_initialized():
@@ -90,7 +90,7 @@ class Llama:
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         if device == "mlu":
             #TODO： 如果设备为 MLU，则设置当前进程的 MLU 设备
-            ________________________________________________
+            torch.set_mlu_device(local_rank)
 
         # seed must be the same in all processes
         torch.manual_seed(1)
@@ -106,7 +106,7 @@ class Llama:
         ), f"Loading a checkpoint for MP={len(checkpoints)} but world size is {model_parallel_size}"
         ckpt_path = checkpoints[get_model_parallel_rank()]
         #TODO：加载模型的检查点文件，并将模型加载到 CPU 上。
-        checkpoint = ________________________________________________
+        checkpoint = torch.load(ckpt_path, map_location="cpu")
         with open(Path(ckpt_dir) / "params.json", "r") as f:
             params = json.loads(f.read())
 
@@ -116,7 +116,7 @@ class Llama:
             **params,
         )
         #TODO: 调用Tokenizer函数
-        tokenizer = ________________________________________________
+        tokenizer = Tokenizer(tokenizer_path)
         model_args.vocab_size = tokenizer.n_words
         # support for mac
         #print(device)
@@ -129,9 +129,9 @@ class Llama:
         else:
             torch.set_default_tensor_type(torch.HalfTensor)
         #TODO: 调用Transformer 模型
-        model =  ________________________________________________
+        model =  Transformer(model_args)
         #TODO：加载模型的参数字典
-        _________________________________________________________
+        model.load_state_dict(checkpoint, strict=False) # NOTE: why strict=False?
         print("TRANSFORMER MODEL PASS!")
         #add start
         #print(device)
