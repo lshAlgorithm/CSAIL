@@ -8,7 +8,7 @@ model_id='CodeLlama-7b-hf'
 #TODO：利用transformers库函数从预训练模型标识符model_id加载分词器tokenizer
 tokenizer=AutoTokenizer.from_pretrained(model_id)
 #TODO:利用transformers库函数从预训练模型加载自回归语言模型,配置模型的数据类型为torch.float16、自动选择设备映射，并关闭安全张量选项
-model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float16, device_map = "balanced_low_0", use_amp=False)
+model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float16, device_map = "auto", use_safetensors=False) # NOTE: "balanced_low_0"
 #TODO: 将模型设置为评估模式
 model = model.eval()
 prompt = '''def remove_non_ascii(s: str) -> str:

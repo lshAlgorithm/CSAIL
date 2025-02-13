@@ -16,8 +16,13 @@ def main(
     max_batch_size: int = 4,
 ):
     #TODO:使用LLAMA模型构建生成器
-    generator = ___________________________________________
-
+    generator = Llama.build(
+        ckpt_dir=ckpt_dir,
+        tokenizer_path=tokenizer_path,
+        max_seq_len=max_seq_len,
+        max_batch_size=max_batch_size,
+        model_parallel_size=1,
+    )
     prompts = [
         '''def remove_non_ascii(s: str) -> str:
     """ <FILL>
@@ -59,7 +64,14 @@ end
     prefixes = [p.split("<FILL>")[0] for p in prompts]
     suffixes = [p.split("<FILL>")[1] for p in prompts]
     # 使用LLAMA模型填充文本
-    results = ______________________________________________________
+    results = generator.text_infilling(
+        prefixes=prefixes,
+        suffixes=suffixes,
+        temperature=temperature,
+        top_p=top_p,
+        max_gen_len=max_gen_len,
+        logprobs=False,
+    )
     for prompt, result in zip(prompts, results):
         print("\n================= Prompt text =================\n")
         print(prompt)

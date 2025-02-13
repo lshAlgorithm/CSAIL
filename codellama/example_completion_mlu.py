@@ -18,7 +18,13 @@ def main(
     max_gen_len: Optional[int] = None,
 ):
     #TODO: 使用LLAMA模型构建生成器
-    generator = __________________________________
+    generator = Llama.build(
+        ckpt_dir=ckpt_dir,
+        tokenizer_path=tokenizer_path,
+        max_seq_len=max_seq_len,
+        max_batch_size=max_batch_size,
+        model_parallel_size=1,
+    )
 
     prompts = [
         # For these prompts, the expected answer is the natural continuation of the prompt
@@ -36,7 +42,9 @@ if __name__ == "__main__":"""
     start_time = time.time()
 
     #TODO: 使用LLAMA模型生成文本
-    results = _____________________________________
+    results = generator.text_completion(
+        prompts, temperature=temperature, top_p=top_p, max_gen_len=max_gen_len
+    )
     for prompt, result in zip(prompts, results):
         print(prompt)
         print(f"> {result['generation']}")

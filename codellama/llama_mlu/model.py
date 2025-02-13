@@ -53,7 +53,7 @@ class RMSNorm(torch.nn.Module):
 
     def forward(self, x):
         #TODO：执行 RMS 归一化，并将结果的数据类型设为与输入张量 x 一致
-        output = self._norm(x)
+        output = self._norm(x.float()).type_as(x)
         return output * self.weight
 
 

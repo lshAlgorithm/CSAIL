@@ -12,6 +12,7 @@ from typing_extensions import List, Literal, Optional, Tuple, TypedDict
 import torch
 import torch_mlu
 import torch.nn.functional as F
+# NOTE: what is fairscale?
 from fairscale.nn.model_parallel.initialize import (
     get_model_parallel_rank,
     initialize_model_parallel,
@@ -68,7 +69,7 @@ UNSAFE_ERROR = "Error: special tags are not allowed as part of the prompt."
 
 
 class Llama:
-    @staticmethod
+    @staticmethod # like static method in CXX
     def build(
         ckpt_dir: str,
         tokenizer_path: str,
@@ -79,7 +80,7 @@ class Llama:
         if not torch.distributed.is_initialized():
             if device == "mlu":
                 #TODO: 使用 MLU 设备初始化分布式进程组
-                torch.distributed.init_process_group(backend="mlu") # NOTE: how it is implemented
+                torch.distributed.init_process_group("cncl") # NOTE: how it is implemented
             else:
                 torch.distributed.init_process_group("gloo")
         if not model_parallel_is_initialized():
@@ -90,7 +91,7 @@ class Llama:
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
         if device == "mlu":
             #TODO： 如果设备为 MLU，则设置当前进程的 MLU 设备
-            torch.set_mlu_device(local_rank)
+            torch.mlu.set_device(local_rank)
 
         # seed must be the same in all processes
         torch.manual_seed(1)
@@ -166,21 +167,21 @@ class Llama:
         bsz = len(prompt_tokens)
         assert bsz <= params.max_batch_size, (bsz, params.max_batch_size)
         #TODO:  获取提示文本序列中最短的长度
-        min_prompt_len = ________________________________________________
+        min_prompt_len = min(len(t) for t in prompt_tokens)
         #TODO: 获取提示文本序列中最长的长度
-        max_prompt_len = ________________________________________________
+        max_prompt_len = max(len(t) for t in prompt_tokens)
         assert max_prompt_len <= params.max_seq_len
         #TODO: 计算生成的总长度，需考虑提示文本和最大生成长度
-        total_len = ________________________________________________
+        total_len = min(max_prompt_len + max_gen_len, params.max_seq_len)
 
         pad_id = self.tokenizer.pad_id
         tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device=device)
         for k, t in enumerate(prompt_tokens):
             #TODO：将提示文本编码添加到张量中
-            tokens[k, : len(t)] = ________________________________________________
+            tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device=device)
         if logprobs:
             #TODO：创建一个与tokens张量具有相同形状的全零张量
-            token_logprobs = ________________________________________________
+            token_logprobs = torch.zeros_like(tokens, dtype=torch.float, device=device)
         prev_pos = 0
         stop_reached = torch.tensor([False] * bsz, device=device)
         input_text_mask = tokens != pad_id
@@ -195,12 +196,12 @@ class Llama:
                 )
             if temperature > 0:
                 #TODO: 对模型的输出进行 softmax 归一化，以得到每个可能的下一个token的概率分布，其中 temperature 用于控制模型输出的多样性
-                probs = ________________________________________________________
+                probs = F.softmax(logits[:-1] / temperature, dim=-1)
                 #TODO: 根据概率分布采样出下一个 token
-                next_token = ________________________________________________________
+                next_token = sample_top_p(probs, top_p) # NOTE: both in fastchat and codellama
             else:
                 #TODO：直接选择logits最大的位置作为下一个token，不进行随机采样
-                next_token = ________________________________________________________
+                next_token = logits.argmax(dim=-1)
 
             next_token = next_token.reshape(-1)
             # only replace token if prompt has already been generated
@@ -215,13 +216,13 @@ class Llama:
 
         if logprobs:
             #TODO: 将张量转换为列表格式
-            token_logprobs = _____________________________________________________
+            token_logprobs = token_logprobs.tolist()
         out_tokens, out_logprobs = [], []
         for i, toks in enumerate(tokens.tolist()):
             # cut to max gen len
             start = 0 if echo else len(prompt_tokens[i])
             #TODO: 截取生成的标记序列，直到达到最大生成长度
-            toks = _____________________________________________________
+            toks = toks[start : len(prompt_tokens[i]) + max_gen_len]
             probs = None
             if logprobs:
                 probs = token_logprobs[i][start : len(prompt_tokens[i]) + max_gen_len]
@@ -231,9 +232,9 @@ class Llama:
                 toks = toks[:stop_idx]
                 probs = probs[:stop_idx] if logprobs else None
             #TODO: 将截取后的标记序列添加到输出列表中
-            _____________________________________________________
+            out_tokens.append(toks)
             #TODO: 将截取后的log概率列表添加到输出列表中
-            _____________________________________________________
+            out_logprobs.append(probs)
         print("LLAMA GENERATE PASS!")
         return (out_tokens, out_logprobs if logprobs else None)
 
@@ -250,11 +251,18 @@ class Llama:
             max_gen_len = self.model.params.max_seq_len - 1
         prompt_tokens = [self.tokenizer.encode(x, bos=True, eos=False) for x in prompts]
         #TODO: 调用 generate 方法生成文本
-        generation_tokens, generation_logprobs = _________________________________________
+        generation_tokens, generation_logprobs = self.generate(
+            prompt_tokens,
+            max_gen_len,
+            temperature=temperature,
+            top_p=top_p,
+            logprobs=logprobs,
+            echo=echo,
+        )
         if logprobs:
             assert generation_logprobs is not None
             return [
-                {TCOMPLETION
+                {
                     "generation": self.tokenizer.decode(t),
                     "tokens": [self.tokenizer.token_piece(x) for x in t],
                     "logprobs": logprobs_i,
@@ -279,11 +287,23 @@ class Llama:
             max_gen_len = self.model.params.max_seq_len - 1
         prompt_tokens = [
             #TODO: 调用函数对每个前缀和后缀进行处理，生成填充问题的编码
-            _________________________________________________________________
+            infilling_prompt_tokens(
+                self.tokenizer,
+                prefix,
+                suffix,
+                suffix_first=suffix_first,
+            )
             for prefix, suffix in zip(prefixes, suffixes)
         ]
         #TODO：调用 generate 方法生成文本
-        generation_tokens, generation_logprobs = _____________________________________________
+        generation_tokens, generation_logprobs = self.generate(
+            prompt_tokens,
+            max_gen_len,
+            temperature=temperature,
+            top_p=top_p,
+            logprobs=logprobs,
+            echo=True,
+        )
 
         generations = [self.tokenizer.decode_infilling(t) for t in generation_tokens]
         print("LLAMA TEXTINFILLING PASS!")
@@ -324,7 +344,7 @@ class Llama:
     ) -> List[ChatPrediction]:
         if self.tokenizer.step_id is not None:
             ## 如果模型支持 step_id，则使用另一种chat_completion的方法
-            return _____________________________________________________
+            return self._chat_completion_turns(dialogs, temperature, top_p, max_gen_len, logprobs)
         if max_gen_len is None:
             max_gen_len = self.model.params.max_seq_len - 1
         prompt_tokens = []
@@ -373,7 +393,14 @@ class Llama:
             )
             prompt_tokens.append(dialog_tokens)
         #TODO：调用 generate 方法生成文本
-        generation_tokens, generation_logprobs = _______________________________________________
+        generation_tokens, generation_logprobs = self.generate(
+            prompt_tokens,
+            max_gen_len,
+            temperature=temperature,
+            top_p=top_p,
+            logprobs=logprobs,
+            echo=True,
+        )
         print("LLAMA CHATCOMPLETION PASS!") 
         if logprobs:
             assert generation_logprobs is not None
@@ -426,10 +453,17 @@ class Llama:
             if dialog[0]["role"] != "system":
                 dialog = [{"role": "system", "content": ""}] + dialog  # type: ignore
             #TODO:调用函数将对话格式化为模型可处理的对话提示编码
-            dialog_tokens = _________________________________________________________
+            dialog_tokens = dialog_prompt_tokens(self.tokenizer, dialog)
             prompt_tokens.append(dialog_tokens)
         #TODO：调用 generate 方法生成文本
-        generation_tokens, generation_logprobs = _________________________________________________
+        generation_tokens, generation_logprobs = self.generate(
+            prompt_tokens,
+            max_gen_len,
+            temperature=temperature,
+            top_p=top_p,
+            logprobs=logprobs,
+            echo=True,
+        )
         if logprobs:
             assert generation_logprobs is not None
             return [
