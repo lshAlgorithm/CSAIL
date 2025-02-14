@@ -9,6 +9,13 @@ import fairscale.nn.model_parallel.initialize as fs_init
 import torch
 import torch_mlu
 import torch.nn.functional as F
+# Note: scales to larger models by dustributing memory and computations
+'''
+Takeaways:
+ColumnParallelLinear is used when the input is not split but the output needs to be split.
+RowParallelLinear is used when the input is split but the output needs to be combined.
+Combining both allows you to distribute memory and computation efficiently across GPUs while minimizing communication overhead.
+'''
 from fairscale.nn.model_parallel.layers import (
     ColumnParallelLinear,
     ParallelEmbedding,
@@ -108,6 +115,7 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
+        # NOTE: technic keypoint: GQA
         self.n_kv_heads = args.n_heads if args.n_kv_heads is None else args.n_kv_heads
         model_parallel_size = fs_init.get_model_parallel_world_size()
         self.n_local_heads = args.n_heads // model_parallel_size
@@ -115,7 +123,6 @@ class Attention(nn.Module):
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
         self.head_dim = args.dim // args.n_heads
 
-        # NOTE: how it is implemented
         self.wq = ColumnParallelLinear(
             args.dim,
             args.n_heads * self.head_dim,
@@ -181,7 +188,7 @@ class Attention(nn.Module):
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis)
 
         # transform to the target tensor type
-        self.cache_k = self.cache_k.to(xq)
+        self.cache_k = self.cache_k.to(xq) # NOTE: technic keypoint: kv_cache
         self.cache_v = self.cache_v.to(xq)
 
         self.cache_k[:bsz, start_pos : start_pos + seqlen] = xk
@@ -236,6 +243,7 @@ class FeedForward(nn.Module):
 
     def forward(self, x):
         #TODO: 补全前馈神经网络的前向传播过程
+        # NOTE: Technic keypoint: SwiGLU
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
 

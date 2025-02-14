@@ -12,7 +12,20 @@ from typing_extensions import List, Literal, Optional, Tuple, TypedDict
 import torch
 import torch_mlu
 import torch.nn.functional as F
-# NOTE: what is fairscale?
+# NOTE: Different from traditional DDP, here utilize model parallel
+'''
+initialize_model_parallel:
+
+# Initialize model parallelism with 2 GPUs
+torch.distributed.init_process_group(backend="nccl") # communication backend
+initialize_model_parallel(world_size=2)
+
+# Inside
+for i in range(data_parallel_size):
+    for j in range(pipeline_length):
+        for k in range(model_parallel_size):
+        ...
+'''
 from fairscale.nn.model_parallel.initialize import (
     get_model_parallel_rank,
     initialize_model_parallel,
@@ -69,7 +82,7 @@ UNSAFE_ERROR = "Error: special tags are not allowed as part of the prompt."
 
 
 class Llama:
-    @staticmethod
+    @staticmethod #like cxx static
     def build(
         ckpt_dir: str,
         tokenizer_path: str,
@@ -80,7 +93,7 @@ class Llama:
         if not torch.distributed.is_initialized():
             if device == "mlu":
                 #TODO: 使用 MLU 设备初始化分布式进程组
-                torch.distributed.init_process_group("cncl") # NOTE: how it is implemented
+                torch.distributed.init_process_group("cncl") # NOTE: how it is implemented?
             else:
                 torch.distributed.init_process_group("gloo")
         if not model_parallel_is_initialized():
@@ -133,7 +146,7 @@ class Llama:
         #TODO: 调用Transformer 模型
         model =  Transformer(model_args)
         #TODO：加载模型的参数字典
-        model.load_state_dict(checkpoint, strict=False) # NOTE: why strict=False?
+        model.load_state_dict(checkpoint, strict=False) # NOTE: not all the parameters are loaded
         print("TRANSFORMER MODEL PASS!")
         #add start
         #print(device)
@@ -205,7 +218,7 @@ class Llama:
                 next_token = torch.argmax(logits[:, -1], dim=-1)
 
             next_token = next_token.reshape(-1)
-            # only replace token if prompt has already been generated
+            # Note: only replace token if prompt has already been generated
             next_token = torch.where(
                 input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token
             )
@@ -495,7 +508,7 @@ class Llama:
         ]
 
 
-
+# NOTE: add some randomness
 def sample_top_p(probs, p):
     probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
     probs_sum = torch.cumsum(probs_sort, dim=-1)
