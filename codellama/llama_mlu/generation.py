@@ -69,7 +69,7 @@ UNSAFE_ERROR = "Error: special tags are not allowed as part of the prompt."
 
 
 class Llama:
-    @staticmethod # like static method in CXX
+    @staticmethod
     def build(
         ckpt_dir: str,
         tokenizer_path: str,
@@ -117,8 +117,9 @@ class Llama:
             **params,
         )
         #TODO: 调用Tokenizer函数
-        tokenizer = Tokenizer(tokenizer_path)
+        tokenizer = Tokenizer(model_path=tokenizer_path)
         model_args.vocab_size = tokenizer.n_words
+        # print(f'the vocab_size is {model_args.vocab_size}')
         # support for mac
         #print(device)
         if device == "mlu":
@@ -196,12 +197,12 @@ class Llama:
                 )
             if temperature > 0:
                 #TODO: 对模型的输出进行 softmax 归一化，以得到每个可能的下一个token的概率分布，其中 temperature 用于控制模型输出的多样性
-                probs = F.softmax(logits[:-1] / temperature, dim=-1)
+                probs = F.softmax(logits[:, -1] / temperature, dim=-1)
                 #TODO: 根据概率分布采样出下一个 token
                 next_token = sample_top_p(probs, top_p) # NOTE: both in fastchat and codellama
             else:
                 #TODO：直接选择logits最大的位置作为下一个token，不进行随机采样
-                next_token = logits.argmax(dim=-1)
+                next_token = torch.argmax(logits[:, -1], dim=-1)
 
             next_token = next_token.reshape(-1)
             # only replace token if prompt has already been generated
@@ -302,7 +303,8 @@ class Llama:
             temperature=temperature,
             top_p=top_p,
             logprobs=logprobs,
-            echo=True,
+            echo=False,
+            stop_token=self.tokenizer.eot_id
         )
 
         generations = [self.tokenizer.decode_infilling(t) for t in generation_tokens]
@@ -399,8 +401,7 @@ class Llama:
             temperature=temperature,
             top_p=top_p,
             logprobs=logprobs,
-            echo=True,
-        )
+        )# echo=True,
         print("LLAMA CHATCOMPLETION PASS!") 
         if logprobs:
             assert generation_logprobs is not None
@@ -462,8 +463,8 @@ class Llama:
             temperature=temperature,
             top_p=top_p,
             logprobs=logprobs,
-            echo=True,
-        )
+            stop_token=self.tokenizer.step_id,
+        )# echo=True,
         if logprobs:
             assert generation_logprobs is not None
             return [

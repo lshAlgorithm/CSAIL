@@ -236,7 +236,7 @@ class FeedForward(nn.Module):
 
     def forward(self, x):
         #TODO: 补全前馈神经网络的前向传播过程
-        return self.w2(F.silu(self.w1(x)))
+        return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
 
 class TransformerBlock(nn.Module):
@@ -308,7 +308,7 @@ class Transformer(nn.Module):
         #TODO: 将 self.freqs_cis 张量移动到 MLU 或 CPU 设备上，以便在该设备上进行后续计算
         self.freqs_cis = self.freqs_cis.to(h.device)
         #TODO：从 self.freqs_cis 中提取一个长度为 seqlen 的子张量，其初始位置为start_pos
-        freqs_cis = self.freqs_cis[:, start_pos : start_pos + seqlen]
+        freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
 
         mask = None
         if seqlen > 1:
